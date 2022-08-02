@@ -32,31 +32,53 @@ export const move = (
   board: Board,
   currentPosition: Position,
   direction: Direction,
-) => {
-  const nextPosition = addPositions(currentPosition, direction)
+): Position => {
+  if (
+    isBox(board, addPositions(currentPosition, direction)) &&
+    canMove(addPositions(currentPosition, direction, 2), board)
+  ) {
+    const nextBoxPosition = addPositions(currentPosition, direction, 2)
+    const nextPlayerPosition = addPositions(currentPosition, direction, 1)
+    moveBoardItem(board, nextBoxPosition, nextPlayerPosition, BOX)
+    moveBoardItem(board, nextPlayerPosition, currentPosition, PLAYER)
 
-  if (!canMove(nextPosition, board)) return currentPosition
-
-  movePlayer(board, nextPosition, currentPosition)
-
-  return nextPosition
+    return nextPlayerPosition
+  } else if (
+    !isBox(board, addPositions(currentPosition, direction, 1)) &&
+    canMove(addPositions(currentPosition, direction, 1), board)
+  ) {
+    moveBoardItem(
+      board,
+      addPositions(currentPosition, direction, 1),
+      addPositions(currentPosition, direction, 0),
+      PLAYER,
+    )
+    return addPositions(currentPosition, direction, 1)
+  } else {
+    return currentPosition
+  }
 }
 
-const movePlayer = (
+const moveBoardItem = (
   board: Board,
   nextPosition: Position,
-  currentPosition: Position,
+  previousPosition: Position,
+  boardItem: BoardItem,
 ) => {
-  board.cache.push(board.matrix[nextPosition.r][nextPosition.c])
-  const lastBoardItem = board.cache.shift()
-  board.matrix[currentPosition.r][currentPosition.c] = lastBoardItem!
-  board.matrix[nextPosition.r][nextPosition.c] = PLAYER
+  upsertCache(board, nextPosition.r, nextPosition.c)
+  const previousBoardItem = cacheEvict(
+    board,
+    previousPosition.r,
+    previousPosition.c,
+  )
+  board.matrix[previousPosition.r][previousPosition.c] = previousBoardItem!
+  board.matrix[nextPosition.r][nextPosition.c] = boardItem
 }
 
-export const addPositions = (c1: Position, c2: Position): Position => {
+export const addPositions = (c1: Position, c2: Position, n = 1): Position => {
   return {
-    r: c1.r + c2.r,
-    c: c1.c + c2.c,
+    r: c1.r + c2.r * n,
+    c: c1.c + c2.c * n,
   }
 }
 
@@ -67,7 +89,7 @@ const canMove = (to: Position, board: Board): boolean => {
     to.r <= BOARD_ROWS_SIZE - 1 &&
     to.c <= BOARD_COLS_SIZE - 1
 
-  const notAWall = [EMPTY, TARGET].includes(board.matrix[to.r][to.c])
+  const notAWall = [EMPTY, TARGET, BOX].includes(board.matrix[to.r][to.c])
 
   return inBound && notAWall
 }
@@ -83,11 +105,26 @@ export const EMPTY = ' '
 
 const boardItems = [WALL, BOX, TARGET, PLAYER, EMPTY] as const
 
+const isBox = (board: Board, position: Position) =>
+  board.matrix[position.r][position.c] === BOX
+
 export type BoardItem = typeof boardItems[number]
 
 export type Board = {
   matrix: BoardItem[][]
-  cache: BoardItem[]
+  cache: { [key: string]: BoardItem }
+}
+
+const upsertCache = (board: Board, row: number, col: number) => {
+  const key = `${row}-${col}`
+  board.cache[key] = board.matrix[row][col]
+}
+
+const cacheEvict = (board: Board, row: number, col: number): BoardItem => {
+  const key = `${row}-${col}`
+  const item = board.cache[key]
+  delete board.cache[key]
+  return item || EMPTY
 }
 
 export const createBoard = (
@@ -107,7 +144,7 @@ export const createBoard = (
 
   return {
     matrix,
-    cache: [EMPTY],
+    cache: {},
   }
 }
 
@@ -163,20 +200,23 @@ let targets = [
 ]
 
 // PROGRAM
-const board = createBoard(playerPosition, boxes, targets)
-printBoard(board)
 
-const readline = require('readline')
-readline.emitKeypressEvents(process.stdin)
-process.stdin.setRawMode(true)
-process.stdin.on('keypress', (str, key) => {
-  if (key.ctrl && key.name === 'c') {
-    process.exit()
-  } else {
-    const direction = mapKeyToDirection(key.sequence)
+if (!process.env.TEST) {
+  const board = createBoard(playerPosition, boxes, targets)
+  printBoard(board)
 
-    printBoard(board)
-    playerPosition = move(board, playerPosition, direction)
-    printBoard(board)
-  }
-})
+  const readline = require('readline')
+  readline.emitKeypressEvents(process.stdin)
+  process.stdin.setRawMode(true)
+  process.stdin.on('keypress', (str, key) => {
+    if (key.ctrl && key.name === 'c') {
+      process.exit()
+    } else {
+      const direction = mapKeyToDirection(key.sequence)
+
+      printBoard(board)
+      playerPosition = move(board, playerPosition, direction)
+      printBoard(board)
+    }
+  })
+}
